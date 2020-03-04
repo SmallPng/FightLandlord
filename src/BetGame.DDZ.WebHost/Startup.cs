@@ -26,13 +26,14 @@ namespace BetGame.DDZ.WebHost
 				return st;
 			};
 
-			RedisHelper.Initialization(new CSRedis.CSRedisClient(configuration["redis"]));
+			//RedisHelper.Initialization(new CSRedis.CSRedisClient(configuration["redis"]));
 		}
 
         public IConfiguration Configuration { get; }
 
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddMemoryCache();
 			services.AddScoped<CustomExceptionFilter>();
             services.AddControllersWithViews();
             services.AddRazorPages();

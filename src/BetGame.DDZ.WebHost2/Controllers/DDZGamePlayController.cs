@@ -10,6 +10,7 @@ using BetGame.DDZ.WebHost2.Model;
 using Microsoft.AspNetCore.Mvc.Filters;
 using System.Threading;
 using FreeSql;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace BetGame.DDZ.WebHost2.Controllers
 {
@@ -29,21 +30,23 @@ namespace BetGame.DDZ.WebHost2.Controllers
                     {
                         try
                         {
-                            var ddzid = RedisHelper.HGet("ddz_gameplay_player_ht", tryval.Item1.Id.ToString());
+                            var ddzid = GamePlay.Cache.Get<string>($"ddz_gameplay_player_ht{tryval.Item1.Id}");
+                            
+                            //var s=RedisHelper.HGet("ddz_gameplay_player_ht", tryval.Item1.Id.ToString());
                             if (!string.IsNullOrEmpty(ddzid))
                             {
                                 var ddz = GamePlay.GetById(ddzid);
-                                foreach (var pl in ddz.Data.players)
+                                foreach (var pl in ddz.Data.Players)
                                 {
-                                    if (pl.id == tryval.Item1.Nick)
+                                    if (pl.Id == tryval.Item1.Nick)
                                     {
-                                        pl.score = ddz.Data.multiple * (ddz.Data.multipleAddition + ddz.Data.bong) * -2;
-                                        pl.status = GamePlayerStatus.逃跑;
+                                        pl.Score = ddz.Data.Multiple * (ddz.Data.MultipleAddition + ddz.Data.Bong) * -2;
+                                        pl.Status = GamePlayerStatus.逃跑;
                                     }
                                     else
-                                        pl.score = ddz.Data.multiple * (ddz.Data.multipleAddition + ddz.Data.bong);
+                                        pl.Score = ddz.Data.Multiple * (ddz.Data.MultipleAddition + ddz.Data.Bong);
                                 }
-                                ddz.Data.stage = GameStage.游戏结束;
+                                ddz.Data.Stage = GameStage.游戏结束;
                                 ddz.SaveData();
                             }
                             StandupStatic(tryval.Item1).Wait();
@@ -281,9 +284,9 @@ namespace BetGame.DDZ.WebHost2.Controllers
                 .HDel("sitdown_ht", new[] { $"{desk.Id}_1", $"{desk.Id}_2", $"{desk.Id}_3" })
                 .HDel("sitdown_player_ht", players[0].Id.ToString(), players[1].Id.ToString(), players[2].Id.ToString()));
 
-            Func<GamePlayer, string> getPlayerStats = pl => $"{pl.id}({pl.score})";
+            Func<GamePlayer, string> getPlayerStats = pl => $"{pl.Id}({pl.Score})";
 
-            var playerScoreIncr = game.Data.players.Select(a => (long)a.score).ToArray();
+            var playerScoreIncr = game.Data.Players.Select(a => (long)a.Score).ToArray();
             lock (updateScoreLock)
             {
                 BaseEntity.Orm.Update<Player>(players[0]).Set(a => a.Score + playerScoreIncr[0]).ExecuteAffrows();
@@ -299,7 +302,7 @@ namespace BetGame.DDZ.WebHost2.Controllers
                 type = "GameOvered",
                 deskId = desk.Id,
                 players = players,
-                msg = $"{desk.Title} 【游戏结束】，本局炸弹 {game.Data.bong}个，{game.Data.players[0].id}({game.Data.players[0].score})，{game.Data.players[1].id}({game.Data.players[1].score})，{game.Data.players[2].id}({game.Data.players[2].score})"
+                msg = $"{desk.Title} 【游戏结束】，本局炸弹 {game.Data.Bong}个，{game.Data.Players[0].Id}({game.Data.Players[0].Score})，{game.Data.Players[1].Id}({game.Data.Players[1].Score})，{game.Data.Players[2].Id}({game.Data.Players[2].Score})"
             });
             SendGameMessage(game, players);
         }
@@ -308,12 +311,12 @@ namespace BetGame.DDZ.WebHost2.Controllers
         public APIReturn CancelAutoPlay([FromForm] string id, [FromForm] string playerId)
         {
             var ddz = DDZGet(id);
-            foreach(var pl in ddz.Data.players) 
-                if (pl.id == playerId)
+            foreach(var pl in ddz.Data.Players) 
+                if (pl.Id == playerId)
                 {
-                    if (pl.status == GamePlayerStatus.托管)
+                    if (pl.Status == GamePlayerStatus.托管)
                     {
-                        pl.status = GamePlayerStatus.正常;
+                        pl.Status = GamePlayerStatus.正常;
                         ddz.SaveData();
                         SendGameMessage(ddz, null);
                     }
@@ -351,6 +354,7 @@ namespace BetGame.DDZ.WebHost2.Controllers
 		[HttpPost("Play")]
         public APIReturn 出牌([FromForm] string id, [FromForm] string playerId, [FromForm] int[] poker) {
 			var ddz = DDZGet(id);
+            //规则检查
 			ddz.Play(playerId, poker);
 
             var gpdb = RedisHelper.StartPipe(a => a
@@ -359,7 +363,7 @@ namespace BetGame.DDZ.WebHost2.Controllers
             var players = gpdb[0] as Player[];
             var desk = gpdb[1] as Desk;
             SendGameMessage(ddz, gpdb[0] as Player[]);
-            if (ddz.Data.stage == GameStage.游戏结束)
+            if (ddz.Data.Stage == GameStage.游戏结束)
             {
                 ImHelper.LeaveChan(players[0].Id, desk.Title);
                 ImHelper.LeaveChan(players[1].Id, desk.Title);
